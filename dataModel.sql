@@ -1,3 +1,4 @@
+
 SET GLOBAL local_infile = 1;
 
 CREATE DATABASE IF NOT EXISTS stock_bi;
@@ -25,7 +26,6 @@ CREATE TABLE staging_clean_data (
 );
 
 
-
 LOAD DATA LOCAL INFILE 'C:/Users/rayen/Desktop/BI project/clean_data.csv'
 INTO TABLE staging_clean_data
 FIELDS TERMINATED BY ','
@@ -38,104 +38,96 @@ IGNORE 1 ROWS
 SET date = STR_TO_DATE(@date, '%d/%m/%Y');
 
 
+CREATE TABLE Dim_Company (
+    company_id INT AUTO_INCREMENT PRIMARY KEY,
+    symbol VARCHAR(10),
+    company_name VARCHAR(200),
+    beta DECIMAL(6,3)
+);
 
-CREATE TABLE Dim_SectorIndustry (
+INSERT INTO Dim_Company (symbol, company_name, beta)
+SELECT DISTINCT symbol, company_name, beta
+FROM staging_clean_data;
+
+
+CREATE TABLE Dim_Sector (
     sector_id INT AUTO_INCREMENT PRIMARY KEY,
     sector VARCHAR(100),
     industry VARCHAR(150)
 );
 
-INSERT INTO Dim_SectorIndustry (sector, industry)
+INSERT INTO Dim_Sector (sector, industry)
 SELECT DISTINCT sector, industry
 FROM staging_clean_data;
 
-CREATE TABLE Dim_Company (
-    symbol VARCHAR(10) PRIMARY KEY,
-    company_name VARCHAR(200),
-    sector_id INT,
-    beta DECIMAL(6,3),
-    FOREIGN KEY (sector_id) REFERENCES Dim_SectorIndustry(sector_id)
-);
-
-INSERT INTO Dim_Company (symbol, company_name, sector_id, beta)
-SELECT DISTINCT
-    s.symbol,
-    s.company_name,
-    d.sector_id,
-    s.beta
-FROM staging_clean_data s
-JOIN Dim_SectorIndustry d
-ON s.sector = d.sector
-AND s.industry = d.industry;
-
 
 CREATE TABLE Dim_Date (
-    date DATE PRIMARY KEY,
+    date_id INT AUTO_INCREMENT PRIMARY KEY,
+    full_date DATE,
     day INT,
     month INT,
-    month_name VARCHAR(20),
     quarter INT,
     year INT,
     weekday VARCHAR(20)
 );
 
-INSERT INTO Dim_Date
+INSERT INTO Dim_Date (full_date, day, month, quarter, year, weekday)
 SELECT DISTINCT
     date,
     DAY(date),
     MONTH(date),
-    MONTHNAME(date),
     QUARTER(date),
     YEAR(date),
     DAYNAME(date)
 FROM staging_clean_data;
 
-CREATE TABLE Dim_Metrics (
-    metric_id INT AUTO_INCREMENT PRIMARY KEY,
-    metric_name VARCHAR(100),
-    metric_category VARCHAR(50),
-    description VARCHAR(255)
+
+CREATE TABLE Dim_MetricGroup (
+    metric_group_id INT AUTO_INCREMENT PRIMARY KEY,
+    metric_group_name VARCHAR(50)
 );
 
-
-INSERT INTO Dim_Metrics VALUES
-(NULL,'Close Price','Price','Daily closing price'),
-(NULL,'Adjusted Close','Price','Adjusted closing price'),
-(NULL,'Volume','Volume','Daily traded volume'),
-(NULL,'Market Cap','Valuation','Market capitalization'),
-(NULL,'P/E Ratio','Valuation','Price-to-Earnings'),
-(NULL,'P/B Ratio','Valuation','Price-to-Book'),
-(NULL,'P/S Ratio','Valuation','Price-to-Sales'),
-(NULL,'Dividend Yield','Valuation','Dividend return');
+INSERT INTO Dim_MetricGroup (metric_group_name) VALUES
+('Price'),
+('Valuation'),
+('Volume'),
+('Dividend');
 
 
 CREATE TABLE Fact_StockPrices (
     fact_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    date DATE,
-    symbol VARCHAR(10),
+
+    company_id INT,
+    sector_id INT,
+    date_id INT,
+    metric_group_id INT,
+
     open DECIMAL(10,2),
     high DECIMAL(10,2),
     low DECIMAL(10,2),
     close DECIMAL(10,2),
     adj_close DECIMAL(10,2),
     volume BIGINT,
+
     market_cap BIGINT,
     pe_ratio DECIMAL(10,2),
     pb_ratio DECIMAL(10,2),
     ps_ratio DECIMAL(10,2),
     dividend_yield DECIMAL(6,2),
-    FOREIGN KEY (date) REFERENCES Dim_Date(date),
-    FOREIGN KEY (symbol) REFERENCES Dim_Company(symbol)
+
+    FOREIGN KEY (company_id) REFERENCES Dim_Company(company_id),
+    FOREIGN KEY (sector_id) REFERENCES Dim_Sector(sector_id),
+    FOREIGN KEY (date_id) REFERENCES Dim_Date(date_id),
+    FOREIGN KEY (metric_group_id) REFERENCES Dim_MetricGroup(metric_group_id)
 );
 
+
 INSERT INTO Fact_StockPrices (
-    date,
-    symbol,
-    open,
-    high,
-    low,
-    close,
-    adj_close,
+    company_id,
+    sector_id,
+    date_id,
+    metric_group_id,
+    open, high, low, close, adj_close,
     volume,
     market_cap,
     pe_ratio,
@@ -144,37 +136,32 @@ INSERT INTO Fact_StockPrices (
     dividend_yield
 )
 SELECT
-    date,
-    symbol,
-    open,
-    high,
-    low,
-    close,
-    adj_close,
-    volume,
-    market_cap,
-    pe_ratio,
-    pb_ratio,
-    ps_ratio,
-    dividend_yield
-FROM staging_clean_data;
-
-
+    c.company_id,
+    s.sector_id,
+    d.date_id,
+    1 AS metric_group_id,   -- Price group (semantic)
+    sc.open,
+    sc.high,
+    sc.low,
+    sc.close,
+    sc.adj_close,
+    sc.volume,
+    sc.market_cap,
+    sc.pe_ratio,
+    sc.pb_ratio,
+    sc.ps_ratio,
+    sc.dividend_yield
+FROM staging_clean_data sc
+JOIN Dim_Company c
+    ON sc.symbol = c.symbol
+JOIN Dim_Sector s
+    ON sc.sector = s.sector
+   AND sc.industry = s.industry
+JOIN Dim_Date d
+    ON sc.date = d.full_date;
 
 
 DROP TABLE staging_clean_data;
 
 
-
-SELECT COUNT(*) FROM Fact_StockPrices;
-SELECT COUNT(*) FROM Dim_Company;
-SELECT COUNT(*) FROM Dim_SectorIndustry;
-SELECT COUNT(*) FROM Dim_Date;
-SELECT COUNT(*) FROM Dim_Metrics;
-
-
-SELECT f.symbol, c.company_name, d.year, f.close
-FROM Fact_StockPrices f
-JOIN Dim_Company c ON f.symbol = c.symbol
-JOIN Dim_Date d ON f.date = d.date
-LIMIT 10;
+SELECT * FROM dim_metricgroup ;
