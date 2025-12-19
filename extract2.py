@@ -21,7 +21,7 @@ for symbol in tickers:
     t = yf.Ticker(symbol)
     info = t.info
 
-    # FORCE Yahoo to include Adj Close
+    
     hist = t.history(
         period="2y",
         interval="1d",
@@ -35,7 +35,7 @@ for symbol in tickers:
 
     hist = hist.reset_index()
 
-    # Now Adj Close WILL exist — detect it
+    
     if "Adj Close" not in hist.columns:
         raise ValueError(f"Adj Close still missing for {symbol}")
 
@@ -58,7 +58,7 @@ for symbol in tickers:
             "low": row["Low"],
             "close": row["Close"],
             "volume": row["Volume"],
-            "adj_close": row["Adj Close"],   # NOW ALWAYS PRESENT
+            "adj_close": row["Adj Close"],   
         })
 
 df = pd.DataFrame(all_rows)
